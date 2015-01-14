@@ -1,0 +1,25 @@
+RasPi VDR Streaming Client
+
+1.0.0:
+- initial release
+
+1.0.1:
+- minor bugfixes
+
+1.0.2:
+- cleanly new samba shares
+- new images
+- new server scripts, no more server and avr config needed
+
+1.0.3:
+- new server wakeup scripts, needs newest avr update and server version >= 1.0.2 !!! The client now finds server and client automaticaly
+- minor bugfixes
+- new vdr channellogos
+- WebIf: wlan password now hidden
+- WebIf: new function "channel editor"
+- WebIf: menu cleanup (minimal user configuration)
+- vdr now use shared videodirs automaticaly from vdrserver
+- videodirs are mount in background to speedup vdr start
+- you can change between SD and HD channellist over OSD
+- user can override sysimages and sysvideos with own images/videos
+

@@ -1,0 +1,1 @@
+../.link_channellogos_to_channelsconf_names.sh

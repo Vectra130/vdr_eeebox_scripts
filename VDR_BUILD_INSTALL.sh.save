@@ -1,0 +1,347 @@
+#!/bin/bash
+# v1.3 all
+#Script um VDR zu bauen und installieren
+
+if [ ! -e config.h ]; then
+	echo -e "\e[31m\nACHTUNG das Script muss im VDR Source Verzeichnis ausgefuehrt werden!!!"
+	echo "VDR-Sourcen nicht gefunden!!!"
+	echo -e "Breche ab\e[0m"
+	exit 0
+fi
+
+# \e[31m = rot
+# \e[32m = gruen
+# \e[33m = gelb
+# \e[34m = blau
+# \e[0m  = schwarz
+
+DIR=$(pwd)
+LOCALEDIR=/usr/share/locale/de_DE/LC_MESSAGES
+NEWVDR=/tmp/newvdr
+NEWVDRTAR=$NEWVDR.tar
+VDRVERSION=$(cat config.h | grep "define VDRVERSION" | awk '{ print $3 }' | sed -e 's/\"//g')
+APIVERSION=$(cat config.h | grep "define APIVERSION" | awk '{ print $3 }' | sed -e 's/\"//g')
+PATCHDIR=/usr/local/src/VDR-Patches/$VDRVERSION
+[ -e $PATCHDIR ] || mkdir -p $PATCHDIR
+
+removepatches(){
+                        [ $(ls $PATCHDIR/ | grep ^$i- | wc -l) -gt 0 ] && patch=1
+                        if [ "x$patch" == "x1" ]; then
+                                for p in $(ls $PATCHDIR/ | grep ^$i-); do
+					echo -e "\e[31m--->Entferne Patch: $p\e[0m"
+                                        patch -RN -p1 -i $PATCHDIR/$p || PATCHFAIL=1
+                                done
+                        fi
+#                        [ $(ls $PATCHDIR/ | grep ^bkp.$i- | wc -l) -gt 0 ] && patch=1
+#                        if [ "x$patch" == "x1" ]; then
+#                                for p in $(ls $PATCHDIR/ | grep ^bkp.$i-); do
+#					echo -e "\e[31m--->Entferne Patch: $p\e[0m"
+#                                        patch -RN -p1 -i $PATCHDIR/$p || PATCHFAIL=1
+#                                done
+#                        fi
+}
+addpatches(){
+                        if [ "x$patch" == "x1" ]; then
+                                for p in $(ls $PATCHDIR/ | grep ^$i-); do
+					echo -e "\e[34m--->Fuege Patch hinzu: $p\e[0m"
+                                        patch -N -p1 -i $PATCHDIR/$p || PATCHFAIL=1
+                                done
+                        fi
+}
+
+echo
+echo -e "\e[34m####################################"
+echo -e "# VDR Version $VDRVERSION gefunden"
+echo -e "# (API Version $APIVERSION)"
+echo -e "#####################################\e[0m"
+
+#bauen
+echo -e "\e[33m"
+read -n 1 -p "Sourcen aktualisieren? VDR und Plugins werden dann neu gebaut. (y/N)   " INPUT
+echo -n -e "\e[m"
+if [ "x$INPUT" == "xy" ]; then
+	echo -e "\nAktualisiere Sourcen..."
+	nb=1
+	i=vdr
+	NOUPDATE=""
+	UPDATEFAIL=0
+	EXIT=0
+	if [ -e .git ]; then
+		echo -e "\n-> GIT: VDR"
+		echo "-->update..."
+		u=$(git pull)
+		echo -e "\e[34m$u\e[0m"
+		if [ "x$(echo $u)" != "xAlready up-to-date." ]; then
+			removepatches
+			echo "-->versuche erneutes update..."
+			u=$(git pull)
+	                echo -e "\e[34m$u\e[0m"
+		                [ "x${u  %Aborting}" == "xAborting" ] && EXIT=$[ EXIT+1 ]
+			addpatches
+		fi
+	else
+		NOUPDATE+="vdr "
+	fi
+	echo
+        cd $DIR/PLUGINS/src/
+        for i in $(ls); do
+		up=0
+		patch=0
+		UPDATEFAIL=0
+                cd $DIR/PLUGINS/src/$i
+                if [ -e .git ]; then
+			echo -e "\n-> GIT: "$i
+	                echo "-->update..."
+	                u=$(git pull)
+	                echo -e "\e[34m$u\e[0m"
+	                if [ "x$(echo $u)" != "xAlready up-to-date." ]; then
+	                        removepatches
+	                        echo "-->versuche erneutes update..."
+	                        u=$(git pull)
+	                        echo -e "\e[34m$u\e[0m"
+                                [ "$(echo $u | grep Aborting | wc -l)" == "1" ] && EXIT=$[ EXIT+1 ]
+	                        addpatches
+	                fi
+		fi
+                if [ -e .subversion ]; then
+                        echo -e "\n-> SVN: "$i
+                        echo "-->update..."
+                        scn up || UPDATEFAIL=1
+                        if [ "x$UPDATEFAIL" == "x1" ]; then
+                                removepatches
+                                echo "-->versuche erneutes update..."
+                                svn up || EXIT=$[ EXIT+1 ]
+                                addpatches
+                        fi
+                fi
+                if [ -e .hg ]; then
+                        echo -e "\n-> HG: "$i
+                        echo "-->update..."
+                        hg update || UPDATEFAIL=1
+                        if [ "x$UPDATEFAIL" == "x1" ]; then
+                                removepatches
+                                echo "-->versuche erneutes update..."
+                                hgupdate || EXIT=$[ EXIT+1 ]
+                                addpatches
+                        fi
+                fi
+		[[ ! -e .git && ! -e .subversion && ! -e .hg ]] && NOUPDATE+="$i " && up=1
+        done
+	echo "Nicht Upgedatet: $NOUPDATE"
+                if [ "x$EXIT" != "x0" ]; then
+			echo -n -e "\e[31m"
+                        read -n 1 -p "$EXIT Update(s) fehlgeschlagen! Trotzdem fortfahren? (y/N)   " INPUT
+                        if [ "x$INPUT" == "xn" ]; then
+                                echo -e "\nABBRUCH"
+                                exit
+                        fi
+			echo -n -e "\e[0m"
+                fi
+
+        cd $DIR
+	[ "x$(ls PLUGINS/lib/)" != "x" ] && rm -r PLUGINS/lib/*
+fi
+echo -e "\e[33m"
+read -n 1 -p "VDR erneut patchen? (y/N)   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" == "xy" ]; then
+	echo
+	i=vdr
+	patch=1
+	removepatches
+	addpatches
+fi
+echo -e "\e[33m"
+read -n 1 -p "Plugins erneut patchen? (y/N)   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" == "xy" ]; then
+	patch=1
+	cd $DIR/PLUGINS/src
+        for i in $(ls); do
+		echo -e "\n->pruefe $i"
+                cd $DIR/PLUGINS/src/$i
+		removepatches
+                addpatches
+	done
+fi
+echo -e "\e[33m"
+read -n 1 -p "VDR neu bauen (make clean)? (y/N)   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" == "xy" ]; then
+	echo -e "\ncleane VDR..."
+	make clean
+fi
+echo -e "\e[33m"
+read -n 1 -p "Plugins neu bauen (make clean)? (y/N)   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" == "xy" ]; then
+        echo -e "\ncleane Plugins..."
+	cd $DIR/PLUGINS/src/
+	for i in $(ls); do
+		cd $i
+		make clean
+		cd ..
+	done
+	cd $DIR
+fi
+echo -e "\nwende Aenderungen an..."
+ln -sf $DIR/ /usr/include/vdr
+make -j1 all plugins
+
+[ "x$?" != "x0" ] && echo && echo -e "\e[31mBuild Fehler. ABBRUCH!!!\e[0m" && exit 0
+sleep 5
+
+
+#kopieren
+#Ordnerstruktur anlegen
+[ -e $NEWVDR ] && rm -r $NEWVDR
+for folder in "root/.vdr" usr/bin usr/lib/vdr/plugins-$APIVERSION usr/share/vdr/plugins /usr/share/locale/de_DE/LC_MESSAGES; do
+	mkdir -p $NEWVDR/$folder
+done
+cd $DIR
+copy_vdr_bin(){
+cp vdr $NEWVDR/usr/bin/vdr-$APIVERSION && bc=1
+ln -s vdr-$APIVERSION $NEWVDR/usr/bin/vdr
+echo -e " \e[32mOK\e[0m"
+}
+copy_plugins(){
+for i in $(find ./ -type f -iname lib*.so); do
+        cp -u $i $NEWVDR/usr/lib/vdr/plugins-$APIVERSION/$(basename $i).$APIVERSION
+done
+count_plugins=$(ls $NEWVDR/usr/lib/vdr/plugins-$APIVERSION/lib*.$APIVERSION | wc -l)
+echo -e " \e[32mOK\e[0m"
+}
+copy_locale(){
+cp -f po/de_DE.mo $NEWVDR/usr/share/locale/de_DE/LC_MESSAGES/vdr.mo
+for i in $(find ./ -type f -iname "de_DE.mo" | grep PLUGINS/src); do
+        cp -u $i $NEWVDR/usr/share/locale/de_DE/LC_MESSAGES/vdr-$(echo $i | sed -e 's!.*PLUGINS/src/!!' -e 's!/po/de_DE.mo!!' -e 's!/!-!' -e 's/-plugin//').mo && lc=$[ lc+1 ]
+done
+count_locale=$(ls $NEWVDR/usr/share/locale/de_DE/LC_MESSAGES/*.mo | wc -l)
+echo -e " \e[32mOK\e[0m"
+}
+#extra dateien
+copy(){
+	for ii in $(find PLUGINS/src/ -maxdepth 2 -type d | grep src/.*/$i); do
+		iii=$(echo "$ii" | sed -e 's!PLUGINS/src/!!')
+		[ -e "$THISDIR/$iii" ] || mkdir -p $THISDIR/$iii
+		cp -r $ii/* $THISDIR/$iii
+		[ -e $LINKDIR/$(dirname $iii) ] || mkdir -p $LINKDIR/$(dirname $iii)
+		ln -sf $(echo $THISDIR | sed -e 's!'$NEWVDR'!!')/$iii $LINKDIR/$iii
+		TMP=$(ls $THISDIR/$iii | wc -l)
+		count_others=$[ count_others+TMP ]
+	done
+}
+copy_themes(){
+i=themes
+THISDIR=$NEWVDR/root/.vdr/$i
+[ -e "$THISDIR" ] || mkdir -p $THISDIR
+for ii in $(find PLUGINS/src/ -maxdepth 2 -type d | grep src/.*/$i); do
+	cp $ii/* $THISDIR/
+done
+count_themes=$(ls $THISDIR/*.theme | wc -l)
+echo -e " \e[32mOK\e[0m"
+}
+copy_others(){ #icons logos symbols decors fonts conf services 
+THISDIR=$NEWVDR/root/.vdr/plugins
+LINKDIR=$NEWVDR/usr/share/vdr/plugins
+for i in icons logos symbols decors fonts conf services dtd views skins fonts; do
+	copy
+done
+echo -e " \e[32mOK\e[0m"
+}
+
+#VDR bin kopieren
+cd $DIR
+echo -e "\e[33m"
+read -n 1 -p "VDR-Binaerdatei 'vdr($VDRVERSION)' erstellen? (Y/n)   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" != "xx" ]; then
+	cp_bin=1
+        echo -n -e "\n\narchiviere vdr Binaerdatei 'vdr($VDRVERSION)'..."
+	copy_vdr_bin
+fi
+
+#Plugins kopieren
+echo -e "\e[33m"
+read -n 1 -p "Plugins erstellen? (Y/n):   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" != "xx" ]; then
+	echo -n -e "\n\narchiviere Plugins..."
+	copy_plugins
+	cp_plugins=1
+fi
+
+#locales kopieren
+echo -e "\e[33m"
+read -n 1 -p "Sprachdateien erstellen? (Y/n):   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" != "xx" ]; then
+	echo -n -e "\n\narchiviere Sprachdateien..."
+	cp_locale=1
+	copy_locale
+fi
+
+#Themes kopieren
+echo -e "\e[33m"
+read -n 1 -p "Themes erstellen? (Y/n):   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" != "xx" ]; then
+	echo -n -e "\n\narchiviere Themes..."
+	copy_themes
+	cp_themes=1
+fi
+
+#sonstige Dateien kopieren
+echo -e "\e[33m"
+read -n 1 -p "Plugin spezifische Dateien erstellen (logos, icons, usw)? (Y/n):   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" != "xx" ]; then
+	echo -n -e "\n\narchiviere Sonstige Dateien..."
+	copy_others
+	cp_others=1
+fi
+
+cd $NEWVDR
+[ -e $NEWVDRTAR ] && rm $NEWVDRTAR
+#touch $NEWVDRTAR
+#[ "$cp_bin" == 1 ] && tar -rf $NEWVDRTAR usr/bin > /dev/null
+#[ "$cp_plugins" == 1 ] && tar -rf $NEWVDRTAR usr/lib/vdr/plugins-$APIVERSION > /dev/null
+#[ "$cp_locale" == 1 ] && tar -rf $NEWVDRTAR usr/share/locale/de_DE/LC_MESSAGES > /dev/null
+#[ "$cp_themes" == 1 ] && tar -rf $NEWVDRTAR var/lib/vdr/themes > /dev/null
+#[ "$cp_others" == 1 ] && tar -rf $NEWVDRTAR var/lib/vdr/plugins > /dev/null
+#[ "$cp_others" == 1 ] && tar -rf $NEWVDRTAR usr/share/vdr/plugins > /dev/null
+
+echo -e "\n\n\e[34mNeue VDR Version $VDRVERSION wurde erstellt\e[0m\n\n"
+echo -e "\nVersion beinhaltet:\e[34m"
+[ "$cp_bin" == 1 ] && echo "   VDR-Binaerdatei"
+[ "$cp_plugins" == 1 ] && echo "   $count_plugins Plugins"
+[ "$cp_locale" == 1 ] && echo "   $count_locale Sprachdateien"
+[ "$cp_themes" == 1 ] && echo "   $count_themes Themes"
+[ "$cp_others" == 1 ] && echo "   $count_others Plugin spezifische Dateien"
+echo -n -e "\e[0m\n\n"
+echo -e "\e[33m"
+read -n 1 -p "Neue VDR-Version auf lokaler Maschine installieren? (y/N):   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" == "xy" ]; then
+	echo
+#	[ ! -z $(pidof -xs vdr-$VDRVERSION) ] && /etc/vectra130/scripts/.suspend.sh
+	[ ! -z $(pidof -xs vdr) ] && killall -9 vdr
+	echo "kopiere..."
+	cp -raf ./* /
+	[ "$?" == 0 ] && echo -e "\e[34m\n\nLokalen VDR aktualisiert\e[0m" \
+		      || echo -e "\e[31m\n\nAktualisierung des Lokalen VDR fehlgeschlagen"
+fi
+echo -e "\n\n\e[33m"
+read -p "Neue VDR-Version auf entfernter Maschine installieren? (IP-Adresse):   " INPUT
+echo -n -e "\e[0m"
+if [ "x$INPUT" != "x" ]; then
+	echo -e "\nkopiere..."
+	tar -cf - ./ | ssh $INPUT 'cd /; [ ! -z $(pidof -xs vdr) ] && /etc/vectra130/scripts/.suspend.sh Standby; tar --overwrite -xf -'
+#	tar -cf - ./ | ssh $INPUT 'cd /; tar -xf -'
+        [ "$?" == 0 ] && echo -e "\e[34m\n\nEntfernter VDR ($INPUT) aktualisiert\e[0m" \
+		      || echo -e "\e[31m\n\nEntfernter VDR ($INPUT) nicht aktualisiert\e[0m"
+fi
+cd /
+rm -r /tmp/newvdr
+rm /tmp/rsync_*
+exit 0

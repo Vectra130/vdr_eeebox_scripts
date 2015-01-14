@@ -1,0 +1,1 @@
+../.startup_s2ram_watchdog.sh

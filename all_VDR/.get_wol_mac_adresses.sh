@@ -1,0 +1,1 @@
+../.get_wol_mac_adresses.sh

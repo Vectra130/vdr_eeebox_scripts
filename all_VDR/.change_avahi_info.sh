@@ -1,0 +1,1 @@
+../.change_avahi_info.sh

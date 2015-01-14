@@ -1,0 +1,1 @@
+../.set_avahi_frontend_info.sh

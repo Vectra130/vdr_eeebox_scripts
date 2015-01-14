@@ -1,0 +1,1 @@
+../.get_avr_infos.sh

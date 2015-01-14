@@ -1,0 +1,1 @@
+../.vdrserver_avr_commands.sh

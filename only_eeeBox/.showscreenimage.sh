@@ -1,0 +1,1 @@
+../.showscreenimage.sh

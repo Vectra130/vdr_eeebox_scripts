@@ -1,0 +1,227 @@
+cat > $UPDATEDIR/exec_update.sh <<EOF_1
+#!/bin/bash
+#Update Script v1.4
+#Nicht bearbeiten!! Wird automatisch erstellt
+#Alle Configs werden gesichert
+#Alle neuen Dateien werden kopiert
+
+logger -t UPDATE "Update startet ..."
+
+
+chvt 2
+echo -e '\033[?17;0;0c' > /dev/tty2
+echo -e '\033[?25l' > /dev/tty2
+tput -Tlinux clear > /dev/tty2
+setterm -blank 0 -blink off -powerdown 0 -cursor off -store > /dev/tty2
+
+echo -e "\n\n\t\t\tUpdate $SYSTYP-v$VERSION wird vorbereitet ..." > /dev/tty2
+
+#Konfiguration
+
+TESTSYSTEM=$TESTSYSTEM
+SIMU=$SIMU
+SWAP=$SWAP # MB
+
+
+SYSTEM=$(echo $SYSTYP | tr "[A-Z]" "[a-z]")
+SYSTEM2=$SYSTYP # nur fuer simulation
+SYSROOT=\$SYSTEM"_root"
+UPDATEVERSION="$VERSION"
+UPDATEDIR=/UPDATE/\$SYSTEM
+if [ "x\$TESTSYSTEM" == x1 ]; then
+	mount -o bind /nfs/backup/VDR_System_Backups_fuer_Stick/update_"\$SYSTEM2"_v"\$UPDATEVERSION"/ /UPDATE/\$SYSTEM
+	rm -r \$UPDATEDIR/BACKUP
+	umount /dev/sda5 /dev/sda7 /dev/sda6
+fi
+
+#infos
+info_yellow() { # ausfuehrung
+echo -e "\e[33m\n\t\$info\e[0m" > /dev/tty2
+logger -t UPDATE "\$info"
+sleep 2
+}
+info_blue() {   # break
+echo -e "\e[34m\n\n\t\$info\e[0m" > /dev/tty2
+logger -t UPDATE "\$info"
+}
+info_red() {    # fehler
+echo -e "\e[31m\n\n\t\$info\n\n\e[0m" > /dev/tty2
+logger -t UPDATE "\$info"
+}
+info_green() {  # status
+echo -e "\e[32m\n\t--> \$info\e[0m" > /dev/tty2
+logger -t UPDATE "\$info"
+}
+info_white() {  # frage
+echo -e "\e[37m\n\t*** \$info\e[0m" > /dev/tty2
+logger -t UPDATE "\$info"
+}
+
+update_fail() {
+	info="Irgendwas lief schief!!! (\$1)... ABBRUCH!!!"; info_red
+	exit 2
+}
+
+update_break() {
+	info="\n\n\n"; info_blue
+	exit 1
+}
+
+update_ok() {
+	info="\n\n\n\n\nDas Update wurde erfolgreich ohne Fehler durchgefuehrt :-)\Bitte nun das System ausschalten und danach das Update-Medium entnehmen.\nAnschliessend kann das System eingeschaltet werden."; info_green
+	read x
+	[ x\$TESTSYSTEM != x1 ] && poweroff
+}
+
+backup_files() {
+info="Sichere Dateien ..."; info_yellow
+while read backupFile; do
+if [ x\$WIEDERHERSTELLUNG == x ]; then
+	[ ! -d \$UPDATEDIR/BACKUP/\$(dirname \$backupFile) ] && mkdir -p \$UPDATEDIR/BACKUP/\$(dirname \$backupFile)
+	if [ -d \$UPDATEDIR/sysRoot/\$backupFile ]; then
+		cp -ra \$UPDATEDIR/sysRoot/\$backupFile \$UPDATEDIR/BACKUP/\$backupFile || update_fail backup_files
+	fi
+	if [ -f \$UPDATEDIR/sysRoot/\$backupFile ]; then
+		cp -ra \$UPDATEDIR/sysRoot/\$backupFile \$UPDATEDIR/BACKUP/\$backupFile || update_fail backup_files_2
+	fi
+fi
+done < \$UPDATEDIR/.exec_update_backup.rsync
+if [ -d \$UPDATEDIR/BACKUP/var/lib/vdr ]; then
+	[ ! -d \$UPDATEDIR/sysRoot/root/.vdr ] && mkdir -p \$UPDATEDIR/sysRoot/root/.vdr
+	mv \$UPDATEDIR/BACKUP/var/lib/vdr/* \$UPDATEDIR/sysRoot/root/.vdr/
+	rmdir \$UPDATEDIR/BACKUP/var/lib/vdr || update_fail_backup_files_3
+fi
+while read dirs; do
+	[ ! -e \$UPDATEDIR/BACKUP/\$dirs ] && mkdir -p \$UPDATEDIR/BACKUP/\$dirs
+done < \$UPDATEDIR/.exec_update_dirs.rsync
+}
+
+mount_system_drive() {
+info="Suche System Laufwerke ..."; info_yellow
+for i in 1 2 3 4 5; do
+        sysRoot=\$(blkid | grep "\$SYSROOT" | awk -F":" '{ print \$1 }')
+        if [[ x\$sysRoot == x && \$i -lt 5 ]]; then
+                info="System Laufwerk mit der Bezeichnung '\$SYSROOT' wurde nicht gefunden! Im Falle eines RasPi Updates die SD Karte entfernen und die RasPi System SD Karte einschieben. Ich warte 30 Sekunden und versuche es dann erneut ..."; info_white
+		sleep 30
+        fi
+	if [[ x\$sysRoot == x && \$i == 5 ]]; then
+	update_fail get_system_drives
+	fi
+done
+[ ! -d \$UPDATEDIR/sysRoot ] && mkdir -p \$UPDATEDIR/sysRoot
+# sysRoot mounten
+mount \$sysRoot \$UPDATEDIR/sysRoot || update_fail get_system_drives_2
+info="\$SYSROOT gemounted"; info_green
+}
+
+mount_other_drives() {
+# weitere Platten, falls gefunden in sysRoot mounten
+info="Suche weitere Festplatten ..."; info_yellow
+for drives in \$(blkid | sed -e 's/\"//g' -e 's/.*LABEL=\('\$SYSTEM'.*\)/\1/' | awk '{ print \$1 }' | grep ^\$SYSTEM | grep -v root | tr "\n" " "); do
+	[ "\$drives" == \$SYSTEM"_boot" ] && point="\$UPDATEDIR/sysRoot/boot"
+	[ "\$drives" == \$SYSTEM"_data" ] && point="\$UPDATEDIR/sysRoot/etc/vectra130/data"
+	[ ! -e "\$point" ] && mkdir -p \$point
+	drive=\$(blkid | grep "LABEL=\"\$drives\"" | awk -F ":" '{ print \$1 }')
+	mount \$drive \$point || update_fail update_fail mount_other_drives
+	info="\$drives gemounted"; info_green
+done
+}
+
+check_version() {
+info="Pruefe Version ..."; info_yellow
+if [ -e \$UPDATEDIR/sysRoot/etc/vectra130/VERSION ]; then
+	tmpVers=\$(cat \$UPDATEDIR/sysRoot/etc/vectra130/VERSION)
+	tmpVers1=\$(echo \$tmpVers | awk -F"." '{ print \$1 }')
+	tmpVers2=\$(echo \$tmpVers | awk -F"." '{ print \$2 }')
+	tmpVers3=\$(echo \$tmpVers | awk -F"." '{ print \$3 }')
+	thisVers=\$[ tmpVers1*1000000 + tmpVers2*1000 + tmpVers3 ]
+	tmpVers0=\$UPDATEVERSION
+	tmpVers1=\$(echo \$tmpVers0 | awk -F"." '{ print \$1 }')
+	tmpVers2=\$(echo \$tmpVers0 | awk -F"." '{ print \$2 }')
+	tmpVers3=\$(echo \$tmpVers0 | awk -F"." '{ print \$3 }')
+	newVers=\$[ tmpVers1*1000000 + tmpVers2*1000 + tmpVers3 ]
+	info="Neue Version: v\$tmpVers0\t\tIstVersion: v\$tmpVers"; info_green
+	if [[ "\$thisVers" -ge "\$newVers" && x\$TESTSYSTEM != x1 ]]; then
+	        info="Die aktuelle Version deines Systems ist nicht aelter als die Update Version! Breche ab ..."; info_blue
+	        update_break
+	fi
+else
+	info="Es wurde kein vorhandenes System gefunden, welches als Vorlage verwendet werden kann!"; info_blue
+	if [ -e \$UPDATEDIR/BACKUP ]; then
+		info="Es wurden gesicherte Dateien gefunden .. diese werden nach dem Update zurueck kopiert"; info_blue
+		WIEDERHERSTELLUNG=1
+	fi
+	info="Update wird als Wiederherstellung fortgefuehrt ..."; info_green
+fi
+}
+
+erase_disk() {
+info="Festplatte wird geloescht ("\$ERASESIZE"B) ... dies kann einige Minuten dauern! Das System NICHT ausschalten!!!"; info_yellow
+if [ x\$SIMU != x1 ]; then
+	rm -rf \$UPDATEDIR/sysRoot/* 2> /dev/null
+fi
+info="Festplatte wurde geloescht"; info_green
+}
+
+copy_new_system() {
+info="Das Grundsystem wird erstellt ("\$COPYSIZE"B) ... dies kann einige Minuten dauern! Das System NICHT ausschalten!!!"; info_yellow
+if [ x\$SIMU != x1 ]; then
+	cp -ra \$UPDATEDIR/NEWFILES/* \$UPDATEDIR/sysRoot/ || update_fail copy_new_system
+fi
+info="Grundsystem wurde erstellt"; info_green
+}
+
+copy_backup_files() {
+info="Gesicherte Dateien werden zurueck kopiert ("\$BACKUPSIZE"B) ... dies kann einige Minuten dauern! Das System NICHT ausschalten!!!"; info_yellow
+#.config verschieben damit die neue nicht ueberschrieben wird
+[ -e \$UPDATEDIR/BACKUP/etc/vectra130/configs/sysconfig/.config ] && mv \$UPDATEDIR/BACKUP/etc/vectra130/configs/sysconfig/.config \$UPDATEDIR/BACKUP/etc/vectra130/configs/sysconfig/.config.bkp
+[ x\$SIMU != x1 ] && cp -ra \$UPDATEDIR/BACKUP/* \$UPDATEDIR/sysRoot/
+info="Gesicherte Dateien wurden kopiert"; info_green
+}
+
+create_config() {
+#.config
+info="Konfigurationsdatei wird aktualisiert"; info_yellow
+while read wert; do
+	if [ "\${wert:0:5}" == "/null" ]; then
+		sed -i -e 's/\('\$(echo "\$wert" | awk -F: '{ print \$2 }')'\)[:].*\([:][A-L][:][0-9]\)/\1:'\$(echo "\$wert" | awk -F: '{ print \$3 }')'\2/' \$UPDATEDIR/sysRoot/etc/vectra130/configs/sysconfig/.config
+#		info=\$(cat \$UPDATEDIR/sysRoot/etc/vectra130/configs/sysconfig/.config | grep "\$(echo "\$wert" | awk -F: '{ print \$2 }'):'\$(echo "\$wert" | awk -F: '{ print \$3 }')'[:][A-Z][:][0-9]"); info_white
+	fi
+done < \$UPDATEDIR/BACKUP/etc/vectra130/configs/sysconfig/.config.bkp
+info="Konfigurationsdatei aktualisiert"; info_green
+}
+
+#swap erstellen
+create_swap() {
+if [ x\$SWAP != x0 ]; then
+	[ ! -e \$UPDATEDIR/sysRoot/etc/vectra130/data ] && mkdir -p \$UPDATEDIR/sysRoot/etc/vectra130/data
+	info="Erstelle Swap-File ("\$SWAP"MB)"; info_yellow
+	dd bs=1024 count=\$((\$SWAP*1024)) if=/dev/zero of=\$UPDATEDIR/sysRoot/etc/vectra130/data/swapfile || update_fail create_swap
+	mkswap \$UPDATEDIR/sysRoot/etc/vectra130/data/swapfile
+	chmod 0600 \$UPDATEDIR/sysRoot/etc/vectra130/data/swapfile
+	info=\$SWAP"MB Swap-File wurde erstellt"; info_green
+fi
+}
+
+# update vorbereiten
+mount_system_drive
+mount_other_drives
+check_version
+backup_files
+
+#update starten
+info="Systemupdate startet ..."; info_yellow
+ERASESIZE=\$(du -hs \$UPDATEDIR/sysRoot/ | awk '{ print \$1 }')
+COPYSIZE=\$(du -hs \$UPDATEDIR/NEWFILES/ | awk '{ print \$1 }')
+BACKUPSIZE=\$(du -hs \$UPDATEDIR/BACKUP/ | awk '{ print \$1 }')
+erase_disk
+copy_new_system
+copy_backup_files
+create_config
+create_swap
+update_ok
+
+exit 0
+EOF_1
+chmod +x $UPDATEDIR/exec_update.sh
+

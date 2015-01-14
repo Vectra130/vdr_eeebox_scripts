@@ -1,0 +1,1 @@
+../.reset_hdmi_port.sh

@@ -1,0 +1,1 @@
+../.skindesigner_infos.sh

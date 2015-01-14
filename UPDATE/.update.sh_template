@@ -1,0 +1,279 @@
+cat > $UPDATEDIR/update.sh <<EOF_1
+#!/bin/bash
+#Update Script v1.6
+#Nicht bearbeiten!! Wird von CREATE_UPDATE.sh erstellt
+#Alle Configs werden gesichert
+#Alle Dateien im Ordner COPY_FILES werden mit Pfadangabe kopiert
+
+logger -t UPDATE "Update startet ..."
+
+#Konfiguration
+UPDATEVERSION="$VERSION"
+REQUIREDVERSION="$REQUIRED"
+FORCEFIRSTSTART="$SETFIRSTSTART"
+
+#Hier die Update Aktionen eintragen
+main_update() {
+#Dateien loeschen
+if [ "\$(cat files_to_remove | wc -l)" != "0" ]; then
+echo -e "\n# files_to_remove\n" >> \$LOG
+while read rmfile; do
+	[ "\$rmfile" != "" ] && rm -vrf /"\$rmfile" >> \$LOG
+done < files_to_remove
+fi
+
+#Dienste installieren/deinstallieren
+echo -e "\n# apt-get -y install" >> \$LOG
+apt-get -y install >> \$LOG
+echo -e "\n# aptitude hold -> \$APT_HOLD" >> \$LOG
+aptitude -y hold \$APT_HOLD >> \$LOG
+echo -e "\n# aptitude update" >> \$LOG
+aptitude -y update >> \$LOG
+echo -e "\n# aptitude purge -> \$APT_PURGE" >> \$LOG
+aptitude -y purge \$APT_PURGE >> \$LOG
+echo -e "\n# aptitude install -> \$APT_INSTALL" >> \$LOG
+aptitude -y install \$APT_INSTALL >> \$LOG
+echo -e "\n# apt-get clean\n" >> \$LOG
+apt-get clean
+
+return 0
+} # >> \$LOG
+
+check_update() {
+echo -e "\n##### check_update" >> \$LOG
+[ "\$(cat /etc/vectra130/VERSION)" != "\$REQUIREDVERSION" ] && return 2
+return 0
+} # >> \$LOG
+
+get_version() {
+echo -e "\n##### get_version"
+UPDATEVERSION=\$(ls /etc/vectra130/update/update_"$SYSTYP"_*/.. | grep $SYSTYP | grep -v tar | awk -F_ '{ print \$3 }')
+[ "X\$UPDATEVERSION" == "X" ] && return 1
+LOG=/etc/vectra130/update_"\$UPDATEVERSION".log
+echo "##########"\$(date)"##########" > \$LOG
+echo "UPDATEVERSION="\$UPDATEVERSION >> \$LOG
+return 0
+}
+
+showscreenimage_RasPi() {
+echo -e "\n##### showscreenimage \$image" >> \$LOG
+
+killall -9 -q fbi
+fbset -depth 32; fbset -depth 16
+export DISPLAY=:0.0
+OPTIONS="-a -noverbose -T 2"
+#clear > \$KEYB_TTY
+#tput -Tlinux clear > \$KEYB_TTY
+fbi \$OPTIONS /etc/vectra130/update/update_RasPi_"\$UPDATEVERSION"/screen_\$image.png &
+return 0
+} # >> \$LOG
+
+showscreenimage_eeeBox() {
+echo -e "\n##### showscreenimage \$image" >> \$LOG
+
+killall -9 -q feh
+export DISPLAY=:1.0
+feh -F /etc/vectra130/update/update_eeeBox_"\$UPDATEVERSION"/screen_\$image.png &>/dev/null
+
+}
+
+prepare() {
+echo -e "\n##### prepare" >> \$LOG
+#Vorbereitungen
+
+#Alte Logs entfernen
+rm -v /etc/vectra130/update_*.log | grep -v "\$UPDATEVERSION"
+
+#ins updateverzeichnis wechseln
+cd /etc/vectra130/update/update_"$SYSTYP"_"\$UPDATEVERSION" || return 3
+
+#configvars setzen
+. /etc/vectra130/configs/sysconfig/.sysconfig
+
+#Multimedia beenden
+if [[ $SYSTYP == RasPi || $SYSTYP == eeeBox ]]; then
+	echo -e "\n# stopallmultimedia" >> \$LOG
+	killall .frontend.sh
+	. \$SCRIPTDIR/.stopallmultimedia
+fi
+
+if [ $SYSTYP == Server ]; then
+	echo -e "\n# stoppe VDR" >> \$LOG
+	killall -v .backend.sh
+	killall -v vdr-\$VDRVERS
+fi
+
+#weitere Dienste beenden
+for daemon in .watchdog.sh irexec oscam epgd; do
+echo "# kille Dienst: "\$daemon >> \$LOG
+	killall -v -9 \$daemon
+done
+for daemon in samba lirc mysql autofs; do
+echo "# stoppe Dienst: "\$daemon >> \$LOG
+	[ -e /etc/init.d/\$daemon ] && /etc/init.d/\$daemon stop &
+done
+
+#ram leeren
+sync && echo "3" > /proc/sys/vm/drop_caches
+
+#Update Grafik einblenden
+image="update"
+[ $SYSTYP != Server ] && showscreenimage_$SYSTYP
+
+#configs sichern
+echo "# sichere configs" >> \$LOG
+rm -rv /etc/vectra130/backup >> \$LOG
+mkdir -pv /etc/vectra130/backup/vdrconfig >> \$LOG
+mkdir -pv /etc/vectra130/backup/xbmcconfig >> \$LOG
+mkdir -pv /etc/vectra130/backup/sysconfig >> \$LOG
+cp -rv \$VDRCONFDIR/* /etc/vectra130/backup/vdrconfig/ >> \$LOG
+cp -rv \$XBMCCONFDIR/* /etc/vectra130/backup/xbmcconfig/ >> \$LOG
+cp -rv \$VDRCONFDIR/.[a-z]* /etc/vectra130/backup/vdrconfig/ >> \$LOG
+cp -rv \$SYSCONFDIR/* /etc/vectra130/backup/sysconfig/ >> \$LOG
+cp -rv \$SYSCONFDIR/.[a-z]* /etc/vectra130/backup/sysconfig/ >> \$LOG
+
+#apt install/purge listen erstellen
+if [ -e dpkg_list_new ]; then
+	echo -e "# dpkg-listen erstellen" >> \$LOG
+        [ -e dpkg_list.diff ] && rm dpkg_list.diff
+        dpkg -l > dpkg_list_now
+	cat dpkg_list_now | grep -A 50000 "+++-===" > dpkg_list_now_tmp
+	cat dpkg_list_new | grep -A 50000 "+++-===" > dpkg_list_new_tmp
+	mv dpkg_list_now_tmp dpkg_list_now
+	mv dpkg_list_new_tmp dpkg_list_new
+        diff dpkg_list_now dpkg_list_new > dpkg_list.diff
+	echo -e "\n### diff dpkg_list_now dpkg_list_new" >> \$LOG
+	diff dpkg_list_now dpkg_list_new >> \$LOG
+	echo -e "###\n"
+        while read dpkglist; do
+                if [ "\${dpkglist:0:1}" == ">" ]; then
+                        APT_INSTALL+=\$(echo "\$dpkglist" | grep ^">" | awk '{ print \$3 }')" "
+                fi
+                if [ "\${dpkglist:0:1}" == "<" ]; then
+			if [ \$(cat dpkg_list.diff | grep ^">" | grep "\$(echo \$dpkglist | awk '{ print \$3 }')" | wc -l) == "0" ]; then
+	                        APT_PURGE+=\$(echo "\$dpkglist" | grep ^"<" | awk '{ print \$3 }')" "
+			fi
+                fi
+        done < dpkg_list.diff
+fi
+
+#apt hold liste erstellen
+if [ -e aptitude_hold ]; then
+	echo -e "# aptitude-hold-listen erstellen" >> \$LOG
+	APT_HOLD=""
+	while read hold; do
+		APT_HOLD+=\$(echo \$hold | awk '{ print \$2 }')" "
+	done < aptitude_hold
+fi
+
+#Ende der Vorbereitungen
+return 0
+} # >> \$LOG
+
+update() {
+echo "##### update" >> \$LOG
+#boot als rw mounten
+mount -o rw,remount /boot
+#Update durchfuehren
+main_update
+
+#Dateien kopieren
+echo -e "# Dateien kopieren" >> \$LOG
+for cpfile in \$(find ./COPY_FILES/ -type f | sed 's/^\.\/COPY_FILES\///'); do
+	[ -d \$(dirname /"\$cpfile") ] || mkdir -p \$(dirname /"\$cpfile")
+	[[ -e /"\$cpfile" && "\$cpfile" != "" && "\$cpfile" != "/" ]] && rm -f /"\$cpfile"
+
+        cp -frav COPY_FILES/"\$cpfile" /"\$cpfile" >> \$LOG
+done
+
+#Patche anwenden
+echo -e "# Patche anwenden" >> \$LOG
+for patchfile in \$(find ./PATCHES/ -type f | sed 's/^\.\/PATCHES\///'); do
+        patch -p0 -N -i PATCHES/"\$patchfile"
+done
+
+#configs wiederherstellen
+echo -e "# Configs wiederherstellen" >> \$LOG
+#.config
+while read wert; do
+	if [ "\${wert:0:5}" == "/null" ]; then
+		sed -i -e 's/\('\$(echo "\$wert" | awk -F: '{ print \$2 }')'\)[:].*\([:][A-L][:][0-9]\)/\1:'\$(echo "\$wert" | awk -F: '{ print \$3 }')'\2/' /etc/vectra130/configs/sysconfig/.config
+		cat /etc/vectra130/configs/sysconfig/.config | grep "\$(echo "\$wert" | awk -F: '{ print \$2 }'):'\$(echo "\$wert" | awk -F: '{ print \$3 }')'[:][A-L][:][0-9]" >> \$LOG
+	fi
+done < /etc/vectra130/backup/sysconfig/.config
+
+#Grub und Initramfs erneuern
+update-initramfs -u
+update-grub
+
+return 0
+} # >> \$LOG
+
+end_update() {
+echo "##### end_update" >> \$LOG
+#Update Ende
+#Abschliessende Aktionen
+if [ "X\$CLEANSTART" == "XYES" ]; then
+echo "# firststart einleiten"
+	sed -i -e 's/FIRSTSTART:0/FIRSTSTART:1/' \$SYSCONFDIR/.config
+	\$SCRIPTDIR/.create_sysconfig.sh
+	\$SCRIPTDIR/.sysconf_changes.sh
+fi
+echo "\$UPDATEVERSION" > /etc/vectra130/VERSION
+return 0
+} # >> \$LOG
+
+update_fail() {
+cat >> \$LOG <<EOF
+##############################################################################
+Update Fehlgeschlagen!!!
+Rueckgabewert = \$?
+# 0 = OK
+# 1 = Versions Check
+# 2 = Update Check
+# 3 = Vorbereitungen
+# 4 = Update
+# 5 = Abschluss
+EOF
+echo -e "\n\n\n########################## SYSLOG #############################\n\n\n" >> \$LOG
+tail -500 /var/log/syslog >> \$LOG
+cp \$LOG /etc/vectra130/configs/userconfig/errorlog_\$(basename \$LOG)
+
+image="updatefail"
+[ $SYSTYP != Server ] && showscreenimage_$SYSTYP
+exit 0
+}
+
+update_ok() {
+echo "##### Update OK" >> \$LOG
+echo -e "\n\n\n########################## SYSLOG #############################\n\n\n" >> \$LOG
+tail -500 /var/log/syslog >> \$LOG
+image="updateok"
+[ $SYSTYP != Server ] && showscreenimage_$SYSTYP
+sleep 10
+}
+
+#Update Ablauf
+logger -t UPDATE "get_version"
+get_version
+[ "\$?" != 0 ] && update_fail
+logger -t UPDATE "check_update"
+check_update
+[ "\$?" != 0 ] && update_fail
+logger -t UPDATE "prepare"
+prepare
+[ "\$?" != 0 ] && update_fail
+logger -t UPDATE "update"
+update
+[ "\$?" != 0 ] && update_fail
+logger -t UPDATE "end_update"
+end_update
+logger -t UPDATE "update_ok"
+update_ok
+
+#Neustart
+echo "###Neustart" >> \$LOG
+/sbin/init reboot
+
+exit 0
+EOF_1

@@ -1,0 +1,14 @@
+#!/bin/bash
+# v1.0 all
+
+. /etc/vectra130/configs/sysconfig/.sysconfig
+
+start autofs
+
+cd /etc/vectra130
+test -e /nfs/vdr_files/Sync/$HOSTNAME || mkdir -p /nfs/vdr_files/Sync/$HOSTNAME
+
+rsync -av --stats --numeric-ids --delete --delete-excluded \
+--exclude backup/ --exclude update* --exclude data \
+/etc/vectra130/ /nfs/vdr_files/Sync/$HOSTNAME
+
