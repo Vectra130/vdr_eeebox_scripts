@@ -1,0 +1,18 @@
+# v1.4 eeebox
+    #stop all unneeded processes
+
+    for i in kodi-standalone kodi kodi.bin vdr
+    do
+	if [ $(pidof -xs $i | wc -l) != "0" ]; then
+		logger -t STOPALLMULTIMEDIA "beende $i"
+		killall -q $i &
+		WAIT=0
+		while true; do
+			[ $(pidof -xs $i | wc -l) == "0" ] && break
+			[ $WAIT == 8 ] && logger -t STOPALLMULTIMEDIA "sauberes beenden von $i innerhalb von 5 Sekunden nicht möglich, töte $i" && killall -9 -q $i && break
+			WAIT=$[ WAIT+1 ]
+			sleep 0.5
+		done
+	fi
+    done
+    rm -f /var/run/kodi*

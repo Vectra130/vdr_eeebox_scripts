@@ -1,0 +1,122 @@
+# v1.25 all clients
+if ! pidof -xs vdr > /dev/null; then	
+	. $SYSCONFDIR/.sysconfig
+        logger -t VDR "Starte VDR (Vorbereitung)..."
+	logger -t VDR "VDR-Server IP: $SERVERIP"
+	#Audio Steuerung pruefen
+        if [ "$EXTAUDIO" == "1" ]; then
+                sed -i  -e 's/^\(LIRC.Channels.*\)/\#\1/' \
+                        -e 's/^\(LIRC.Volume.*\)/\#\1/' \
+                        -e 's/^\(LIRC.User3.*\)/\#\1/' \
+                        $VDRCONFDIR/remote.conf
+	else
+                sed -i  -e 's/^\#\(LIRC.Channels.*\)/\1/' \
+                        -e 's/^\#\(LIRC.Volume.*\)/\1/' \
+                        -e 's/^\#\(LIRC.User3.*\)/\1/' \
+                        $VDRCONFDIR/remote.conf
+	fi
+
+      if [ "$CLIENTTYP" == "RasPi" ]; then
+        #HDMI Mode setzen
+        if [[ "$hdmigroup" != "Auto" && "$hdmigroup" != "HDMI_aus" ]]; then
+                case "$hdmigroup" in
+                  1)
+                        logger -t VDR "Setze HDMI Mode auf 'CEA $hdmimode'"
+                        tvservice -e "CEA $hdmimode"
+                        ;;
+                  2)
+                        logger -t VDR "Setze HDMI Mode auf 'DMT $hdmimode'"
+                        tvservice -e "DMT $hdmimode"
+                        ;;
+                esac
+        fi
+      fi
+
+	#VDR starten
+	logger -t VDR  "Startvorbereitungen "
+        if [ "$DEBUGMODE" == "YES" ]; then
+		VDRLOG=3
+        else
+	        killall -9 -q .showscreenimage.sh
+	        $SCRIPTDIR/.showscreenimage.sh vdr &
+		VDRLOG=3
+        fi
+	sed -i  -e 's/\(.*\)RemoteIp.*/\1RemoteIp = '$SERVERIP'/' \
+		-e 's/\(.*\)ServerIp.*/\1ServerIp = '$SERVERIP'/' \
+		-e 's/\(epg2vdr.DbHost\).*/\1 = '$SERVERIP'/' \
+		-e 's/\(scraper2vdr.mysqlHost\).*/\1 = '$SERVERIP'/' \
+		-e 's/\(.*\)RemotePort.*/\1RemotePort = '$SVDRP_PORT'/' \
+		-e 's/\(.*\)ServerPort.*/\1ServerPort = '$SVDRP_PORT'/' \
+		-e 's/streamdev-client.RemotePort.*/streamdev-client.RemotePort = 2004/' \
+		$VDRCONFDIR/setup.conf
+
+[ -e "$VDRPLUGINburnconfig1" ] || VDRPLUGINburnconfig1="/tmp"
+EPGIMAGEDIR=$DATADIR/vdr/epgimages
+CHANLOGODIR=$DATADIR/vdr/channellogos
+
+#Video Verzeichnisse mounten
+$SCRIPTDIR/.set_videodir.sh &
+
+if [[ "x$SUBCLIENT" != "x" && "x$SUBCLIENT" != "x " ]]; then
+	#Kanal vom Haupt Client uebernehmen
+	. $SCRIPTDIR/.subclient_channel
+fi
+
+#Plugins auswaehlen
+PLUGINS=""
+[[ "$VDRPLUGINdbus2vdr" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-dbus2vdr.so.$VDRVERS ]] 			&& PLUGINS+="-P 'dbus2vdr' "
+[[ "$VDRPLUGINsofthddevice" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-softhddevice.so.$VDRVERS ]]            && PLUGINS+="-P 'softhddevice -a hdmi:AES0=0x4,CARD=NVidia,DEV=1 -p iec958:AES0=0x6,CARD=Intel,DEV=0 -d :1.0 -f -v vdpau' "
+[[ "$VDRPLUGINrpihddevice" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-rpihddevice.so.$VDRVERS ]] 		&& PLUGINS+="-P 'rpihddevice' "
+[[ "$VDRPLUGINsuspendoutput" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-suspendoutput.so.$VDRVERS ]] 		&& PLUGINS+="-P 'suspendoutput' "
+[[ "$VDRPLUGINskinflat" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinflat.so.$VDRVERS ]] 			&& PLUGINS+="-P 'skinflat --logopath=$CHANLOGODIR' "
+[[ "$VDRPLUGINskinflatplus" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinflatplus.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinflatplus --logopath=$CHANLOGODIR' "
+[[ "$VDRPLUGINskinenigmang" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinenigmang.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinenigmang --logodir=$CHANLOGODIR --epgimages=$EPGIMAGEDIR' "
+[[ "$VDRPLUGINskinnopacity" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinnopacity.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinnopacity --logopath=$CHANLOGODIR --iconpath=/root/.vdr/plugins/skinnopacity/icons --epgimages=$EPGIMAGEDIR' "
+[[ "$VDRPLUGINskinpearlhd" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinpearlhd.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinpearlhd --epgimages=$EPGIMAGEDIR' "
+[[ "$VDRPLUGINskindesigner" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skindesigner.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skindesigner --epgimages=$EPGIMAGEDIR' "
+[[ "$VDRPLUGINyaepghd" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-yaepghd.so.$VDRVERS ]] 			&& PLUGINS+="-P 'yaepghd' "
+[[ "$VDRPLUGINtext2skin" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-text2skin.so.$VDRVERS ]] 			&& PLUGINS+="-P 'text2skin' "
+[[ "$VDRPLUGINsvdrpservice" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-svdrpservice.so.$VDRVERS ]] 		&& PLUGINS+="-P 'svdrpservice $SERVERIP:$SVDRP_PORT' "
+[[ "$VDRPLUGINsvdrposd" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-svdrposd.so.$VDRVERS ]] 			&& PLUGINS+="-P 'svdrposd' "
+[[ "$VDRPLUGINstreamdevclient" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-streamdev-client.so.$VDRVERS ]] 	&& PLUGINS+="-P 'streamdev-client' "
+[[ "$VDRPLUGINosdteletext" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-osdteletext.so.$VDRVERS ]] 		&& PLUGINS+="-P 'osdteletext' "
+[[ "$VDRPLUGINclock" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-clock.so.$VDRVERS ]] 				&& PLUGINS+="-P 'clock' "
+[[ "$VDRPLUGINmenuorg" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-menuorg.so.$VDRVERS ]] 			&& PLUGINS+="-P 'menuorg' "
+[[ "$VDRPLUGINextrecmenu" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-extrecmenu.so.$VDRVERS ]] 			&& PLUGINS+="-P 'extrecmenu' "
+[[ "$VDRPLUGINrecsearch" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-recsearch.so.$VDRVERS ]] 			&& PLUGINS+="-P 'recsearch' "
+[[ "$VDRPLUGINremoteosd" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-remoteosd.so.$VDRVERS ]] 			&& PLUGINS+="-P 'remoteosd' "
+[[ "$VDRPLUGINremotetimers" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-remotetimers.so.$VDRVERS ]] 		&& PLUGINS+="-P 'remotetimers' "
+[[ "$VDRPLUGINtvscraper" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-tvscraper.so.$VDRVERS ]] 			&& PLUGINS+="-P 'tvscraper -d /nfs/vdrserver/plugins/tvscraper' "
+if [[ "$VDRPLUGINtvguide" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-tvguide.so.$VDRVERS ]]; then
+	sed -i -e 's/^\#User5/User5/' -e 's/^\#User6/User6/' $VDRCONFDIR/keymacros.conf
+	sed -i -e 's/^\#LIRC.User5/LIRC.User5/' -e 's/^\#LIRC.User6/LIRC.User6/' -e 's/^LIRC.Schedule/\#LIRC.Schedule/' -e 's/^LIRC.Info/\#LIRC.Info/' $VDRCONFDIR/remote.conf
+	PLUGINS+="-P 'tvguide -l $CHANLOGODIR -i /root/.vdr/plugins/tvguide/icons -i $EPGIMAGEDIR' "
+else
+	sed -i -e 's/^User5/\#User5/' -e 's/^User6/\#User6/' $VDRCONFDIR/keymacros.conf
+	sed -i -e 's/^LIRC.User5/\#LIRC.User5/' -e 's/^LIRC.User6/\#LIRC.User6/' -e 's/^\#LIRC.Schedule/LIRC.Schedule/' -e 's/^\#LIRC.Info/LIRC.Info/' $VDRCONFDIR/remote.conf
+fi
+if [ $(avahi-browse -tlk --resolve --parsable _VDR-Streaming-Server._tcp | grep ^"=" | grep "epgd=1" | wc -l) == 1 ]; then
+	[[ "$VDRPLUGINscraper2vdr" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-scraper2vdr.so.$VDRVERS ]] 		&& PLUGINS+="-P 'scraper2vdr -i $EPGIMAGEDIR -m client' "
+	[[ "$VDRPLUGINepg2vdr" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-epg2vdr.so.$VDRVERS ]] 			&& PLUGINS+="-P 'epg2vdr' "
+fi
+[[ "$VDRPLUGINepgsearch" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-epgsearch.so.$VDRVERS ]] 			&& PLUGINS+="-P 'epgsearch' "
+[[ "$VDRPLUGINpermashift" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-permashift.so.$VDRVERS ]] 			&& PLUGINS+="-P 'permashift' "
+[[ "$VDRPLUGINosdpip" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-osdpip.so.$VDRVERS ]] 				&& PLUGINS+="-P 'osdpip' "
+[[ "$VDRPLUGINburn" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-burn.so.$VDRVERS ]] 				&& PLUGINS+="-P 'burn --dvd=/dev/null --iso=$VDRPLUGINburnconfig1' "
+[[ "$VDRPLUGINfritzbox" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-fritzbox.so.$VDRVERS ]] 			&& PLUGINS+="-P 'fritzbox' "
+[[ "$VDRPLUGINchannellists" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-channellists.so.$VDRVERS ]] 		&& PLUGINS+="-P 'channellists' "
+[[ "$VDRPLUGINchanman" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-chanman.so.$VDRVERS ]] 			&& PLUGINS+="-P 'chanman' "
+[[ "$VDRPLUGINchanorg" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-chanorg.so.$VDRVERS ]] 			&& PLUGINS+="-P 'chanorg' "
+[[ "$VDRPLUGINlive" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-live.so.$VDRVERS ]] 				&& PLUGINS+="-P 'live' "
+
+#VDR starten
+VDR_CMD="VDR_CHARSET_OVERRIDE=de_DE.UTF-8 LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 /usr/bin/vdr -v /vdrvideo00 -c /root/.vdr -L /usr/lib/vdr/plugins-$VDRVERS -s '/etc/vectra130/scripts/.suspend.sh' -E $DATADIR/vdr/epg.data -u root -g /tmp --port $SVDRP_PORT --no-kbd --vfat -w 0 -l $VDRLOG --lirc $PLUGINS"
+#Debug?
+# VDR_CMD+=" --userdump"
+
+logger -t VDR "Starte VDR (bin)..."
+pidof -xs vdr || eval $VDR_CMD
+
+#VDR beendet
+logger -t VDR "VDR gestoppt"
+fi

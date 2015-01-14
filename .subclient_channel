@@ -1,0 +1,6 @@
+# v1.0 all clients
+# Kanal des Haupt Client ermitteln
+subChan=$(echo "chan" | nc -w 1 $SUBCLIENT 6419 | grep ^250 | awk '{ print $2 }')
+#[ "x$subChan" != "x" ] && vdr-dbus-send.sh /Remote remote.SwitchChannel string:'$subChannel'
+[ "x$subChan" != "x" ] && sed -i -e 's/CurrentChannel =.*/CurrentChannel = '$subChan'/' /root/.vdr/setup.conf
+

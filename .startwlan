@@ -1,0 +1,22 @@
+# v1.2 eeebox
+logger -t WLAN "Warte auf WLAN Verbindung"
+ifdown eth0
+ifup wlan0
+for((i=1; i<31; i++)); do		
+	if [[ "$i" == "3" && "$FIRSTSTART" != "1" ]]; then
+		killall -9 -q mplayer
+		fbi -T 2 -a -noverbose $IMAGEDIR/screen_wlan.png &
+	fi
+	if [ "$(route | grep 192 | grep wlan0 | wc -l)" != "0" ]; then
+#	if [ "$(iwconfig | grep $WLANSSID | wc -l)" != "0" ]; then
+ 	        logger -t WLAN "WLAN hergestellt ..."
+		[ $(pidof -xs .watchdog.sh | wc -w) != "0" ] || touch /tmp/.wlan_watchdog
+		sleep 1
+		[[ "$i" -ge 3 && "$FIRSTSTART" != "1" ]] && fbi -T 2 -a -noverbose $IMAGEDIR/screen_blank.png &
+#		[ "$DEBUGMODE" != "YES" ] && tput -Tlinux clear > $KEYB_TTY
+		break
+	fi
+		[ "$i" == 30 ] && logger -t WLAN "WLAN Verbindung konnte nicht hergestellt werden! Aktiviere eth0 Interface ..."
+	[[ "$i" == 30 && "$FIRSTSTART" != "1" ]] && ifup eth0
+done
+killall -9 -q fbi

@@ -1,0 +1,13 @@
+# v1.0 all clients
+
+. $SCRIPTDIR/.killbootsplash
+
+tput -Tlinux clear > $KEYB_TTY
+for ((i=0; i<=5; i++)); do echo; done
+
+while read MESSAGE; do
+	echo -e "\t\t"$MESSAGE > $KEYB_TTY
+sleep 0.5
+done < $MSG
+echo ende
+

@@ -1,0 +1,81 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          avahi.init
+# Required-Start:    $remote_fs dbus
+# Required-Stop:     $remote_fs dbus
+# Should-Start:      $syslog
+# Should-Stop:       $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Avahi Init and Shutdown Script
+# Description:
+### END INIT INFO
+# v1.2 all client
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+#PATH=/sbin:/usr/sbin:/bin:/usr/bin
+DESC="Vectra130 Init Script"
+NAME=vectra130.init
+PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/aa-$NAME
+VERBOSE="yes"
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.2-14) to ensure that this file is present
+# and status_of_proc is working.
+. /lib/lsb/init-functions
+
+#pathvars setzen
+. /etc/vectra130/configs/sysconfig/.pathvars
+. $SYSCONFDIR/.sysconfig
+
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
+
+#Avahi Service erstellen
+#####
+cat > /etc/avahi/services/VDR-Streaming-Client.service << EOF
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+
+
+<service-group>
+  <name replace-wildcards="yes">VDR-Streaming-Client @ %h</name>
+
+  <service>
+    <type>_VDR-Streaming-Client._tcp</type>
+    <port>6419</port>
+    <txt-record>SYSTEMTYP=$SYSTEMTYP</txt-record>
+    <txt-record>CLIENTTYP=$CLIENTTYP</txt-record>
+    <txt-record>MACADRESS=$MACADRESS</txt-record>
+    <txt-record>online=1</txt-record>
+  </service>
+</service-group>
+EOF
+#####
+}
+
+#
+# Function that sends a SIGHUP to the daemon/service
+#
+case "$1" in
+  start)
+        [ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC" "$NAME"
+        do_start
+        case "$?" in
+                0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+                2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+        esac
+        ;;
+  *)
+        echo "Usage: $SCRIPTNAME {start}"
+        exit 3
+        ;;
+esac
+
+:
+

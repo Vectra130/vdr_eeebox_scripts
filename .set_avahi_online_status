@@ -1,0 +1,21 @@
+# v1.0 all
+
+. /etc/vectra130/scripts/.get_mac_ip
+TYP=Server
+[ "$SYSTEMTYP" == "CLIENT" ] && TYP="Client_"$CLIENTTYP
+TYP2=Server
+[ "$SYSTEMTYP" == "CLIENT" ] && TYP2=Client
+
+cat > /etc/avahi/services/system_running.service <<EOF
+<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
+<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
+
+
+<service-group>
+  <name replace-wildcards="yes">|${TYP}|%h|${MACADRESS}|${IPADRESS}|</name>
+
+  <service>
+    <type>_VDR-Streaming-${TYP2}._tcp</type>
+  </service>
+</service-group>
+EOF

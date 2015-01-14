@@ -1,0 +1,203 @@
+#!/bin/bash
+
+### BEGIN INIT INFO
+# Provides:          vectra130.init
+# Required-Start:
+# Required-Stop:
+# Default-Start:     S
+# Default-Stop:
+# Short-Description: Vectra130 Init and Shutdown Script
+# Description:
+### END INIT INFO
+# v1.3 eeebox
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+#PATH=/sbin:/usr/sbin:/bin:/usr/bin
+DESC="Vectra130 Init and Shutdown Script"
+NAME=vectra130.init
+PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/aa-$NAME
+VERBOSE="yes"
+
+#Fastboot aktivieren
+touch /fastboot
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.2-14) to ensure that this file is present
+# and status_of_proc is working.
+. /lib/lsb/init-functions
+
+#pathvars setzen
+. /etc/vectra130/configs/sysconfig/.pathvars
+if [ -e $SYSCONFDIR/.sysconfig ]; then
+	. $SYSCONFDIR/.sysconfig
+fi
+
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
+#root und tmp Partition mounten
+mount -o rw,remount /
+mount -t tmpfs -o size=200M tmpfs /tmp
+
+#Netzwerkadapter erkennung zurück setzen
+echo "" > /etc/udev/rules.d/70-persistent-net.rules
+
+#debug ermitteln
+if [ "$(cat /proc/cmdline | grep 'console=tty10' | wc -l)" == "1" ]; then
+	DEBUGMODE=NO
+	KEYB_TTY=/dev/tty2
+	X_TTY=/dev/tty8
+        chvt $(echo $KEYB_TTY | sed -e 's/\/dev\/tty//')
+	echo -e '\033[30m' > $KEYB_TTY
+        echo -e '\033[?17;0;0c' > $KEYB_TTY
+        echo -e '\033[?25l' > $KEYB_TTY
+        tput -Tlinux clear > $KEYB_TTY
+	echo -e '\033[30m' > $X_TTY
+        echo -e '\033[?17;0;0c' > $X_TTY
+        echo -e '\033[?25l' > $X_TTY
+        tput -Tlinux clear > $X_TTY
+
+#	fbi -T 2 -noverbose $IMAGEDIR/screen_wakeup.png &
+#	ffplay -fs $VIDEODIR/Boot_Videa4.avi &
+#	mplayer -fs -vo fbdev -nosound $VIDEODIR/Boot_Video4.avi &
+	if [ -e $VIDEODIR/Boot_Video4.avi ]; then
+		SHOWVIDEO=$VIDEODIR/Boot_Video4.avi
+	else
+		SHOWVIDEO=$VECTRADIR/sysvideos/Boot_Video4.avi
+	fi
+	fbff -f -v fbdev $SHOWVIDEO &
+
+else
+	DEBUGMODE=YES
+	KEYB_TTY=/dev/tty1
+	X_TTY=/dev/tty8
+fi
+
+#FirstBoot Check
+if [ ! -z "$(cat $SYSCONFDIR/.config | grep "FIRSTSTART:1")" ]; then
+	#werte auf 1 setzen
+	for config in USEDHCP SPLASHNR USEKODI AVRRELAIS; do
+		sed -i -e 's/:\('$config'\):.*:\([A,B,L]\):/:\1:1:\2:/' $SYSCONFDIR/.config
+	done
+	#werte auf 0 setzen
+        for config in EXTAUDIO USEWLAN; do
+                sed -i -e 's/:\('$config'\):.*:\([A,B,L]\):/:\1:0:\2:/' $SYSCONFDIR/.config
+        done
+	#werte loeschen
+        for config in IP GATEWAY NETMASK AVRIP AVRPORT SERVERIP SERVERHOSTNAME SERVERMAC NASIP1 NASIP2 NASPATH2 NASIP3 NASPATH3 NASIP4 NASPATH4 NAMESERVER; do
+                sed -i -e 's/:\('$config'\):.*:\([A,B,L]\):/:\1::\2:/' $SYSCONFDIR/.config
+        done
+	#spezielle werte setzen
+        sed -i -e 's/\(HOSTNAME\):.*:A:/\1:raspberry:A:/' -e 's/\(SPLASH\):.*:L:/\1:Video:L:/' -e 's/\(hdmigroup\):.*:L:/\1:auto:L:/' -e 's/\(CONSOLE\):.*:L:/\1:10:L:/' -e 's/\(WORKGROUP\):.*:A:/\1:WORKGROUP:A:/' -e 's/\(AVRPORT\):.*:A:/\1:2701:A:/' -e 's/\(NASPATH1\):.*:A:/\1:video00:A:/' $SYSCONFDIR/.config
+
+	#root Passwort auf raspi setzen
+	echo "root:eeebox" | chpasswd
+
+fi
+
+#System-Version ermitteln
+VERSION=$(cat /etc/vectra130/VERSION)
+sed -i -e 's/\(-Aktuelle Version:\).*/\1 '"$VERSION"'/' $SYSCONFDIR/.config
+
+#Sysconfig erstellen
+#####
+cat > $SYSCONFDIR/.sysconfig << EOF
+# Konfigurationsdatei fur automatisch generierte Variablen
+# !!!!!!!!!! NICHT BEARBEITEN !!!!!!!!!!
+# Erstellt: $(date)
+
+#andere configs mit integrieren
+. $SYSCONFDIR/.pathvars
+. $VDRCONFDIR/.plugin_start.config
+
+	SYSTEMTYP="CLIENT"
+	CLIENTTYP="eeeBox"
+        KEYB_TTY="$KEYB_TTY"
+	X_TTY="$X_TTY"
+        GEOMETRY="0 0 0 0 0"
+	HDMIFREQ="50"
+        DEBUGMODE="$DEBUGMODE"
+        USEVDR="1"
+        SVDRP_PORT=6419
+	XDISPLAY=":1.0"
+        SERVERIP="$SERVERIP"
+        SERVERHOSTNAME="$SERVERHOSTNAME"
+        SERVERMAC="$SERVERMAC"
+        SERVERWAKEUP="AVR"
+        AVRIP="$AVRIP"
+        AVRPORT="$AVRPORT"
+        AVRRELAIS="$AVRRELAIS"
+	AVRHOSTNAME="$AVRHOSTNAME"
+	MACADRESS="Netzwerk nicht konfiguriert"
+	VERSION="$VERSION"
+	VDRVERS="2.1.6"
+
+. $SYSCONFDIR/.nice.config
+
+#Aus config uebernommene Variablen
+EOF
+#####
+
+$SCRIPTDIR/.create_sysconfig.sh
+. $SYSCONFDIR/.sysconfig
+
+#Konsolenbildschirmschoner abschalten
+setterm -blank 0 -blink off -powerdown 0 -cursor off -store > $KEYB_TTY
+setterm -blank 0 -blink off -powerdown 0 -cursor off -store > $X_TTY
+
+#Bildschirm Geometrie ermitteln und sichern
+GEOMETRY=$(fbset --show | grep geometry | cut -d' ' -f 6-)
+
+#Netzwerk einrichten
+. $SCRIPTDIR/.set_network
+
+#alte Updatedateien entfernen
+[ $(ls /etc/vectra130/update/ | wc -l) != "0" ] && rm -r /etc/vectra130/update/*
+
+}
+
+#
+# Function that stops the daemon/service
+#
+do_stop()
+{
+
+#Shutdown Grafik setzen
+killall -9 -q .showscreenimage.sh
+$SCRIPTDIR/.showscreenimage.sh shutdown &
+
+#Mediacenter in Standby setzen
+/etc/vectra130/scripts/.stopallmultimedia
+
+}
+
+#
+# Function that sends a SIGHUP to the daemon/service
+#
+case "$1" in
+  start)
+	[ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC" "$NAME"
+	do_start
+	case "$?" in
+		0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+		2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+	esac
+	;;
+  stop)
+	[ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
+#	do_stop
+	case "$?" in
+		0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+		2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+	esac
+	;;
+  *)
+	echo "Usage: $SCRIPTNAME {start|stop}"
+	exit 3
+	;;
+esac
+
+:

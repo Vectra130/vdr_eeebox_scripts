@@ -1,0 +1,49 @@
+# v1.2 all clients
+        if ! pidof -xs kodi.bin > /dev/null; then
+
+        #Audio Steuerung pruefen
+        if [ "$EXTAUDIO" == "1" ]; then
+                sed -i  -e 's/^      \(<volumeplus>.*\)/\<!--  \1 -->/' \
+                        -e 's/^      \(<volumeminus.*\)/\<!--  \1 -->/' \
+                        -e 's/^      \(<myradio>.*\)/\<!--  \1 -->/' \
+                        -e 's/^      \(<mytv>.*\)/\<!--  \1 -->/' \
+                        $KODICONFDIR/userdata/keymaps/remote.xml
+	else
+                sed -i  -e 's/^<!--  \(<volumeplus>.*\) -->.*/      \1/' \
+                        -e 's/^<!--  \(<volumeminus.*\) -->.*/      \1/' \
+                        -e 's/^<!--  \(<myradio>.*\) -->.*/      \1/' \
+                        -e 's/^<!--  \(<mytv>.*\) -->.*/      \1/' \
+                        $KODICONFDIR/userdata/keymaps/remote.xml
+        fi
+
+
+		killall -9 -q .showscreenimage.sh
+		[ "$DEBUGMODE" != "YES" ] && $SCRIPTDIR/.showscreenimage.sh kodi &
+                logger -t KODI "Starte KODI-EntertainmentCenter ..."
+		#Internetzugang testen
+		if ! ping -c2 $GATEWAY > /dev/null; then
+			#Netzwerk im KODI deaktivieren moeglich???
+			logger -t KODI "Ping auf Gateway nicht ok"
+		fi
+
+		#falls nicht geschehen Verzeichnisse mounten
+		if [ $(pidof -xs automount | wc -l) == 0 ]; then
+			. $SCRIPTDIR/.set_videodir
+		fi
+
+	if [ "$CLIENTTYP" == "eeeBox" ]; then
+                #xserver starten
+                . $SCRIPTDIR/.startX8
+
+		#kodi starten
+                DISPLAY=:1.0 su - root -c 'kodi -fs --standalone'
+	fi
+	if [ "$CLIENTTYP" == "RasPi" ]; then
+		#kodi starten
+		su - root -c kodi-standalone
+	fi
+
+		#kodi beenden
+		killall -9 kodi.bin
+        fi
+ 

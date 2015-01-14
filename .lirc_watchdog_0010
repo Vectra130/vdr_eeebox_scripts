@@ -1,0 +1,10 @@
+# v1.2 all clients
+if [ ! $(pidof -xs lircd) ]; then
+	logger -t WATCHDOG "Starte lirc"
+	if [ "$EXTAUDIO" == "1" ]; then
+		cp -a $SYSCONFDIR/.irexec_extaudio.conf $SCRIPTDIR/.irexec.conf
+	else
+                cp -a $SYSCONFDIR/.irexec_intaudio.conf $SCRIPTDIR/.irexec.conf
+	fi
+	/etc/init.d/lirc start
+fi

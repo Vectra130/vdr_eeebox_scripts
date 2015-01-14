@@ -1,0 +1,154 @@
+#!/bin/bash
+# v1.3 eeebox
+
+### BEGIN INIT INFO
+# Provides:          vectra130.media
+# Required-Start:    $remote_fs $syslog
+# Required-Stop:
+# Default-Start:     2
+# Default-Stop:
+# Short-Description: Vectra130 Multimedia Start Script
+# Description:
+### END INIT INFO
+
+# PATH should only include /usr/* if it runs after the mountnfs.sh script
+PATH=/sbin:/usr/sbin:/bin:/usr/bin:/etc/vectra130/scripts
+DESC="Vectra130 Multimedia Start Script"
+NAME=vectra130.media
+PIDFILE=/var/run/$NAME.pid
+SCRIPTNAME=/etc/init.d/$NAME
+
+# Define LSB log_* functions.
+# Depend on lsb-base (>= 3.2-14) to ensure that this file is present
+# and status_of_proc is working.
+. /lib/lsb/init-functions
+
+#
+# Function that starts the daemon/service
+#
+do_start()
+{
+
+#erstmal die Configvars setzen
+. /etc/vectra130/configs/sysconfig/.sysconfig
+
+#swap einrichten falls vorhanden
+[ -e $DATADIR/swapfile ] && swapon $DATADIR/swapfile
+
+#MAC Adresse ermitteln
+. $SCRIPTDIR/.get_mac_ip
+$SCRIPTDIR/.change_avahi_info.sh MACADRESS $MACADRESS
+sed -i -e 's/\(MACADRESS=\).*/\1\"'"$MACADRESS"'\"/' /etc/vectra130/configs/sysconfig/.sysconfig
+sed -i -e 's/\(-MAC-Adresse:\).*/\1 '"$MACADRESS"'/' /etc/vectra130/configs/sysconfig/.config
+
+#auf Wlan Link warten
+if [ "$USEWLAN" == "1" ]; then
+        . $SCRIPTDIR/.startwlan
+fi
+
+#FirstBoot Info
+if [ "$FIRSTSTART" == "1" ]; then
+	start lighttpd
+        IP=$(ifconfig eth0 2>/dev/null|awk '/inet addr:/ {print $2}'|sed 's/addr://')
+        if [ ! -z "$IP" ]; then
+                sed -i -e 's/\(die Adresse \).*\( in die\)/\1'"$IP"'\/config\2/' $SYSCONFDIR/.firststart-ok-message
+                cat $SYSCONFDIR/.firststart-ok-message > /tmp/.displaymessage
+	else
+	        IP=$(ifconfig wlan0 2>/dev/null|awk '/inet addr:/ {print $2}'|sed 's/addr://')
+	        if [ ! -z "$IP" ]; then
+	                sed -i -e 's/\(die Adresse \).*\( in die\)/\1'"$IP"'\/config\2/' $SYSCONFDIR/.firststart-ok-message
+	                cat $SYSCONFDIR/.firststart-ok-message > /tmp/.displaymessage
+	        else
+	                cat $SYSCONFDIR/.firststart-fail-message > /tmp/.displaymessage
+		fi
+	fi
+        . $SCRIPTDIR/.displaymessage
+        while true; do sleep 10; done
+fi
+
+#Server und AVR Infos aktualisieren
+avahi-browse -tlk _VDR-Streaming-Client._tcp # sonst klappt dir avr erkennung nicht!
+expect -c "set echo \"-noecho\"; set timeout 10; spawn -noecho "$SCRIPTDIR"/.get_avr_infos.sh; expect timeout { exit 1 } eof { exit 0 }"
+avrExit=$?
+expect -c "set echo \"-noecho\"; set timeout 10; spawn -noecho "$SCRIPTDIR"/.get_server_infos.sh; expect timeout { exit 1 } eof { exit 0 }"
+serverExit=$?
+. SYSCONFDIR/.sysconfig
+[ x$serverExit == x1 ] && logger -t MEDIA "Sub-Script '.get_avr_infos.sh' wurde nach 10 Sekunden abgebrochen! Versuche es mit den zuletzt bekannten Werten."
+[ x$AVRexit == x1 ]    && logger -t MEDIA "Sub-Script '.get_server_infos.sh' wurde nach 10 Sekunden abgebrochen!"
+if ( [ x$SERVERIP == x || x$SERVERHOSTNAME == x ] && [ x$SERVERWAKEUP ==xAVR ] ) || ( [ x$SERVERMAC == x && x$SERVERWAKEUP == xWOL ] ); then
+        $SCRIPTDIR/.showscreenimage.sh vdrserverfail.png &
+	logger -t MEDIA "AVRIP=$AVRIP, AVRHOSTNAME=$AVRHOSTNAME, AVRPORT=$AVRPORT, AVRRELAIS=$AVRRELAIS"
+	logger -t MEDIA "SERVERIP=$SERVERIP, SERVERHOSTNAME=$SERVERHOSTNAME, SERVERMAC=$SERVERMAC"
+	cp /var/log/syslog /etc/vectra130/bootlog
+        exit 2
+fi
+
+#Gehe beim Start in StandBy falls es so eingestellt ist
+###KLAPPT NICHT MIT DEM AUFWACHEN!!!
+#	touch /tmp/.no_startsuspend_info
+#	. $SCRIPTDIR/.killbootsplash
+#	fbi -T 2 -a -noverbose $VECTRADIR/sysimages/screen_blank.png &>/dev/null
+#	fbset -depth 32; fbset -depth 16
+#	export DISPLAY=:0.0
+#	killall -9 -q fbi
+#	fbi -T 2 -a -noverbose $VECTRADIR/sysimages/screen_suspend.png &>/dev/null
+#	$SCRIPTDIR/.suspend.sh Standby
+#	$SCRIPTDIR/.startup_s2ram_watchdog.sh &
+
+#videoverzeichniss vorbereiten und mounten
+. $SCRIPTDIR/.set_videodir
+
+#frontend starten
+[ "$(pidof -xs .frontend.sh | wc -w)" == "0" ] && nice -$_watchdog_sh_nice $SCRIPTDIR/.frontend.sh &
+
+#Watchdog starten
+logger -t WATCHDOG "Starte Watchdogs"
+nice -$_watchdog_sh_nice $SCRIPTDIR/.watchdog.sh &
+
+#einige weitere Dienste starten
+for daemon in lighttpd nmbd samba-ad-dc smbd sudo chrony cron; do
+	start "$daemon"
+done
+
+#logging?
+if [ "${DEBUGMODE}" != "YES" ]; then
+	sleep 30
+	cp /var/log/syslog /etc/vectra130/bootlog
+#        /etc/init.d/syslog-ng stop
+        find /var/log/ -maxdepth 2 -type f -exec rm {} \;
+fi
+
+}
+
+do_stop()
+{
+
+#Mediacenter in Standby setzen
+/etc/vectra130/scripts/.stopallmultimedia
+
+}
+
+case "$1" in
+  start)
+	[ "$VERBOSE" != no ] && log_daemon_msg "Starting $DESC" "$NAME"
+	do_start
+	case "$?" in
+		0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+		2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+	esac
+	;;
+  stop)
+        [ "$VERBOSE" != no ] && log_daemon_msg "Stopping $DESC" "$NAME"
+        do_stop
+        case "$?" in
+                0|1) [ "$VERBOSE" != no ] && log_end_msg 0 ;;
+                2) [ "$VERBOSE" != no ] && log_end_msg 1 ;;
+        esac
+        ;;
+  *)
+	echo "Usage: $SCRIPTNAME {start}" >&2
+	exit 3
+	;;
+esac
+
+:

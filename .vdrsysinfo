@@ -1,0 +1,7 @@
+#!/bin/bash
+# v1.0 all
+
+INFO="$(bash /etc/vectra130/scripts/sysinfo.sh stop)"
+#sleep 5
+echo "$INFO"
+

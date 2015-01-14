@@ -1,0 +1,8 @@
+# v1.0 test
+
+# m h dom mon dow user	command
+
+#aufraeumen
+0 4 1 * * root rm -r /usr/share/doc/* /usr/share/icons/*
+
+#

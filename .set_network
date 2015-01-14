@@ -1,0 +1,63 @@
+#Netzwerkeinstellungen setzen
+# v1.2 eeebox
+
+. $SYSCONFDIR/.sysconfig
+
+SUBIP=$(echo $IP | awk -v FS="." '{ print $1 "." $2 "." $3 }')
+#/etc/network/interfaces erstellen
+[ "$USEDHCP" == "1" ] && TYP="dhcp" \
+			|| TYP="static"
+cat > /etc/network/interfaces <<EOF
+# ACHTUNG!!! Nicht bearbeiten! Wird automatisch vom
+# sysconf_changes Skript generiert
+# Erstellt: $(date)
+
+auto lo
+iface lo inet loopback
+
+EOF
+
+if [ "$USEWLAN" == "1" ]; then
+wpa_passphrase $WLANSSID $WPAKEY > $SYSCONFDIR/wpa_supplicant.conf
+cat >> /etc/network/interfaces <<EOF
+allow-hotplug eth0
+iface eth0 inet dhcp
+
+auto wlan0
+iface wlan0 inet manual
+wpa_roam /etc/vectra130/configs/sysconfig/wpa_supplicant.conf
+iface default inet $TYP
+EOF
+else
+cat >> /etc/network/interfaces <<EOF
+allow-hotplug eth0
+iface eth0 inet $TYP
+EOF
+fi
+
+if [ "$USEDHCP" != "1" ]; then
+cat >> /etc/network/interfaces <<EOF
+        address $IP
+        netmask $NETMASK
+        network $SUBIP.0
+        broadcast $SUBIP.255
+        gateway $GATEWAY
+EOF
+fi
+
+#/etc/hostname erstellen
+echo $HOSTNAME > /etc/hostname
+
+#/etc/samba/smb.conf aendern
+sed -i -e 's/\(workgroup =\).*/\1 '$WORKGROUP'/' /etc/samba/smb.conf
+
+#/etc/mailname erstellen
+echo $HOSTNAME > /etc/mailname
+
+#/etc/hosts aendern
+echo -e "127.0.1.1\t\t$HOSTNAME" > /etc/hosts
+if [ "$SYSTEMTYP" == "CLIENT" ]; then
+	echo -e "$SERVERIP\t\t$SERVERHOSTNAME" >> /etc/hosts
+fi
+
+/etc/init.d/hostname.sh

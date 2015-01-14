@@ -1,0 +1,12 @@
+# v1.1 all clients
+#pruefen ob bestimmte Services laufen und per Avahi public machen
+
+. /etc/vectra130/configs/sysconfig/.sysconfig
+
+for daemon in vdr lighttpd kodi; do
+	if [ "$(pidof -xs $daemon | wc -w)" == "1" ]; then
+		$SCRIPTDIR/.change_avahi_info.sh $daemon 1
+	else
+		$SCRIPTDIR/.change_avahi_info.sh $daemon 0
+	fi
+done

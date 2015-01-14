@@ -1,0 +1,21 @@
+# v1.0 eeebox
+
+#watchdog prueft ob hdmi bildschirm verbunden ist
+
+if [[ "$CHECKHDMI" == "1" && "$(DISPLAY=:1.0 xrandr | grep 'HDMI-0' | grep ' disconnected' | wc -l)" == "1" ]]; then
+	if [ ! -e /tmp/.hdmi_connect.time ]; then
+		logger -t WATCHDOG "Hdmi ist disconnected, gehe in 5 Minuten in suspend..."
+		date +%s > /tmp/.hdmi_connect.time
+	else
+		LAST=$(cat /tmp/.hdmi_connect.time)
+		NOW=$(date +%s)
+		DIFF=$[ NOW - LAST ]
+		if [ $DIFF -ge 290 ]; then
+			rm /tmp/.hdmi_connect.time
+			logger -t WATCHDOG "HDMI Anschluss seit 5 Minuten disconnected, starte Suspend..."
+			$SCRIPTDIR/.suspend.sh
+		fi
+	fi
+else
+	[ -e /tmp/.hdmi_connect.time ] && rm /tmp/.hdmi_connect.time && logger -t WATCHDOG "Hdmi Anschluss wieder connected"
+fi

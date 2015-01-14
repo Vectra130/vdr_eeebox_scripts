@@ -1,0 +1,6 @@
+# v1.0 all
+
+TMP="eth0"
+[ "$USEWLAN" == "1" ] && TMP="wlan0"
+MACADRESS=$(LANG=en_EN.UTF8 ifconfig | grep $TMP | grep "HWaddr" | awk '{ print $5 }')
+IPADRESS=$(LANG=en_EN.UTF8 ifconfig | grep $TMP -A2 | grep "inet addr" | awk '{ print $2 }' | awk -F: '{ print $2 }')

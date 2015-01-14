@@ -1,0 +1,12 @@
+# v1.0 eeebox
+
+#xserver auf Display :1.0 vt8 starten
+if [ "$(pidof -xs X | wc -w)" == 0 ]; then
+	$SCRIPTDIR/.showscreenimage.sh blank &
+	logger -t X "Starte Xserver"
+	start plain-xserver
+        export DISPLAY=:1.0
+        xhost +si:localuser:vdr
+        xset -dpms
+        xset s off
+fi

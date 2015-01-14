@@ -1,0 +1,9 @@
+# v1.0 eeebox
+
+#killall -9 -q ffplay
+killall -9 -q fbff &
+#killall -9 -q mplayer
+#killall -9 -q omxplayer
+#killall -9 -q omxplayer.bin
+#fbi -T 2 -noverbose $IMAGEDIR/screen_blank.png
+killall -9 -q fbi

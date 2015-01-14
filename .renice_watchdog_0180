@@ -1,0 +1,14 @@
+# v1.6 all
+
+for bin_raw in $(cat $SYSCONFDIR/.nice.config | grep -v watchdog | grep -v ^'#' | sed -e 's/_nice=.*//' | tr '\n' ' '); do
+	bin=$(echo $bin_raw | sed -e 's/__/-/g' -e 's/_/./g')
+	pid=$(ps -el | awk '{ print $4 }' | grep -w "$(pidof -xs $bin)")
+	if [ x$pid != x ]; then
+		nice=$(cat $SYSCONFDIR/.nice.config | grep -w "$bin_raw"_nice | cut -d "\"" -f 2)
+		now=$(ps -el | grep -w " 0 *$pid" | awk '{ print $8 }')
+		if [ "X$now" != "X$nice" ]; then
+			logger -t RENICE $bin" : "$now" -> "$nice
+			renice -n $nice -p $(pidof -x $bin) # > /dev/null
+		fi
+	fi
+done
