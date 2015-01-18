@@ -1,4 +1,4 @@
-# v1.25 all clients
+# v1.27 all clients
 if ! pidof -xs vdr > /dev/null; then	
 	. $SYSCONFDIR/.sysconfig
         logger -t VDR "Starte VDR (Vorbereitung)..."
@@ -70,7 +70,7 @@ PLUGINS=""
 [[ "$VDRPLUGINsuspendoutput" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-suspendoutput.so.$VDRVERS ]] 		&& PLUGINS+="-P 'suspendoutput' "
 [[ "$VDRPLUGINskinflat" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinflat.so.$VDRVERS ]] 			&& PLUGINS+="-P 'skinflat --logopath=$CHANLOGODIR' "
 [[ "$VDRPLUGINskinflatplus" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinflatplus.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinflatplus --logopath=$CHANLOGODIR' "
-[[ "$VDRPLUGINskinenigmang" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinenigmang.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinenigmang --logodir=$CHANLOGODIR --epgimages=$EPGIMAGEDIR' "
+[[ "$VDRPLUGINskinenigmang" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinenigmang.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinenigmang --logodir=${CHANLOGODIR}_xpm --epgimages=$EPGIMAGEDIR' "
 [[ "$VDRPLUGINskinnopacity" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinnopacity.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinnopacity --logopath=$CHANLOGODIR --iconpath=/root/.vdr/plugins/skinnopacity/icons --epgimages=$EPGIMAGEDIR' "
 [[ "$VDRPLUGINskinpearlhd" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skinpearlhd.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skinpearlhd --epgimages=$EPGIMAGEDIR' "
 [[ "$VDRPLUGINskindesigner" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-skindesigner.so.$VDRVERS ]] 		&& PLUGINS+="-P 'skindesigner --epgimages=$EPGIMAGEDIR' "
@@ -108,6 +108,7 @@ fi
 [[ "$VDRPLUGINchanman" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-chanman.so.$VDRVERS ]] 			&& PLUGINS+="-P 'chanman' "
 [[ "$VDRPLUGINchanorg" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-chanorg.so.$VDRVERS ]] 			&& PLUGINS+="-P 'chanorg' "
 [[ "$VDRPLUGINlive" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-live.so.$VDRVERS ]] 				&& PLUGINS+="-P 'live' "
+[[ "$VDRPLUGINweatherforecast" == "1" && -e /usr/lib/vdr/plugins-$VDRVERS/libvdr-weatherforecast.so.$VDRVERS ]] 	&& PLUGINS+="-P 'weatherforecast' "
 
 #VDR starten
 VDR_CMD="VDR_CHARSET_OVERRIDE=de_DE.UTF-8 LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 /usr/bin/vdr -v /vdrvideo00 -c /root/.vdr -L /usr/lib/vdr/plugins-$VDRVERS -s '/etc/vectra130/scripts/.suspend.sh' -E $DATADIR/vdr/epg.data -u root -g /tmp --port $SVDRP_PORT --no-kbd --vfat -w 0 -l $VDRLOG --lirc $PLUGINS"
